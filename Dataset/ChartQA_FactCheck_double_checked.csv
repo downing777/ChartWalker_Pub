@@ -1,0 +1,5 @@
+query,answer,gt_sources,start_candidates
+Did the Philippines experience both constraints on press freedom and limitations on public demonstrations as government abuses during the pandemic?,Yes,"[""test_001071"", ""test_001072""]",Philippines
+Did the share of US teens who preferred Instagram as their social media platform decline between 2015 and 2017 while the platform maintained a higher share of registered users compared to active users in 2018?,Yes,"[""test_001207"", ""test_001476""]",Instagram
+"During the coronavirus pandemic, did the Philippine government engage in both limiting public protest activities and interrupting legislative proceedings?",Yes,"[""test_001071"", ""test_000552""]",Philippines
+Is it true that the share of deals requiring regulatory approval decreased from 2019 to 2020 while a major technology company experienced growth in its subscriber base during the same period?,"No, the share of deals requiring regulatory approval increased from 24% in 2019 to 35% in 2020, while the company's subscriber count also increased during this period.","[""test_000016"", ""test_001675""]",Time Period 2020

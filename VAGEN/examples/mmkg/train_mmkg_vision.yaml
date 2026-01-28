@@ -1,0 +1,12 @@
+envs:
+  - name: mmkg
+    n_envs: 300
+    data_source: mmkg
+    seed: [1, 10000, 1]
+    max_turns: 15
+    response_length_per_turn: 4096
+    config:
+      render_mode: vision
+      kg_path: kg_path.pkl
+      qa_path: VAGEN/examples/mmkg/datasets/mixed_clean_train.csv
+      # query anser 由内部决定

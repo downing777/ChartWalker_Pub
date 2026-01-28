@@ -1,0 +1,8 @@
+sentence-transformers
+scikit-learn
+func_timeout
+tenacity
+class_registry
+editdistance
+matplotlib
+async_timeout

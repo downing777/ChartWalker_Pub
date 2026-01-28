@@ -1,0 +1,263 @@
+DEFAULTS:
+  LANGUAGE: English
+#   ENTITY_TYPES: ["organization", "person", "geo", "event", "category"]
+prompts:
+  entity_extraction: |
+    ## Task Overview
+    Given a text document or several images(if not none), and a list of entity types, extract all relevant entities, relationships among them,
+    and content-level keywords. Use {language} as output language. Return results in JSON format.
+
+    ## Steps
+    1. Extract all entities matching the types: {entity_types} from both text and image.
+    2. Extract all clearly defined relationships among entities matching the relation types: {relation_types}.
+    3. Extract high-level keywords summarizing the document.
+    4. Return a JSON dictionary with three keys: "entities", "relationships", and "content_keywords".
+    5. Make sure the "entity_type" and "relation_type" are in the list of corresponding list mentioned above.
+    6. **Reminder:Use simplified but concise entity name and each relationship must reference entities that were extracted in step 1.**
+
+    ## Output Format
+    You should return a JSON object with the following structure:
+    ```json
+    {{
+      "entities": [
+        {{
+          "entity_name": "...",
+          "entity_type": "...",
+          "entity_description": "..."
+        }},
+        ...
+      ],
+      "relationships": [
+        {{
+          "source_entity": "...",
+          "target_entity": "...",
+          "relation_type": "...",
+          "relationship_description": "...",
+          "relationship_keywords": ["...", "..."],
+        }},
+        ...
+      ],
+      "content_keywords": ["...", "..."]
+    }}
+    ```
+    ## REMINDER: DO NOT INCLUDE ANY COMMENT, ELLIPSIS, OR EXTRA TEXT IN THE OUTPUT. ONLY RETURN THE JSON STRUCTURE.
+
+    ## Text
+    {input_text}
+  hierarchical_entity_extraction: |
+    ## Task Overview
+    Given a text document or several images (if any), and a list of entity types, extract all relevant entities with hierarchical levels, 
+    their relationships (both intra-level and inter-level), and content-level keywords.  
+    Return results in JSON format.
+
+    Your main goal is to build a **layered knowledge graph** where:
+    - The **first-level (Level 1)** entities form the **core concepts** and maintain **meaningful relationships among each other**, preserving the backbone of the knowledge graph.
+    - **Level 2 and beyond **  should include supporting, supplementary central entities that enrich or explain the lower level entities (e.g. detailed entities, sub-entities within a table or chart, etc.)
+
+    ## Entity Extraction Guidelines
+    1. Only extract **semantic-rich** and **indexable** entities with standalone meaning. Skip:
+      - Generic or referential phrases (e.g., "the people", "the war", "this game").
+      - Presentation-only or navigational text (e.g., "Next season", "Previous section", "last year").
+      - Keep entity names concise but specific, and provide a brief, meaningful description.
+      - **Do not extract vague or context-dependent fragments such as single words unless they are globally recognized standalone entities.**
+      - **When an entity's name contains a qualifier, always include the qualifier so the name is uniquely identifiable and disambiguated from similar terms in other contexts.**
+      **All entities should be within the reuqired entity types {entity_types}**
+
+    2. Prioritize **domain concepts** that are:
+      - Central to the document or topic.
+      - Likely to recur across documents.
+      - Useful as anchor points in a broader knowledge graph.
+    
+    3. Entity levels, level 1 entities are the most central:
+      - **Level 1**: core concepts that are central to the topic or chunk.
+      - **Level 2**: relevant but supporting or descriptive entities that enrich or explain Level 1 entities.
+      - **Level 3 and beyond**: fine-grained attributes and detailed sub-entities; rarely used; only for deeply nested or marginal information.
+      - **IMPORTANT: You MUST extract entities at least up to Level 3. Do not stop at Level 1 or Level 2 only. Ensure that Level 3 entities are extracted when the document structure supports it.**
+
+    4. Avoid extracting:
+      - Standalone numeric data
+      - Labels or headings that lack conceptual substance (e.g. time, date etc)
+    
+    ## Relationship Guidelines
+    1. For the entities extracted above, there are two level relationships:
+      - **Intra-level**: especially prioritize relationships **within Level 1**. Also extract meaningful intra-level relationships **within Level 2** when entities at the same level have clear semantic connections (e.g., temporal relationships, categorical relationships, comparative relationships).
+      - **Inter-level**: link higher-level entities to their supporting lower-level entities.
+      - All level1 entities must have at least one intra-level relationship
+      - If there's higher level entities, there must be a relationship between them and lower level entities. Which means if there's a level 2 entity, there must be a relation between it and a level 1 entity.
+      - **For Level 2 entities**: When multiple Level 2 entities share common attributes (e.g., same category, time series, related metrics), extract intra-level relationships between them to form a connected subgraph at Level 2.
+
+    2. As entity extraction, you should prioritize level1 relationships:
+      - Ensure that Level 1 forms a valid and useful subgraph by itself.
+
+    3. All relationships should be within required types {relation_types}.
+
+    4. Ensure all relationships include:
+      - `source_entity`, `target_entity`
+      - ** entities must be in the extracted entities list, check the entity list before you extract the relationships**
+      - `relation_type` (must be in allowed types)
+      - `relationship_description`
+      - `relationship_keywords`
+    
+    ## Steps
+    1. Extract all entities matching the types: {entity_types} from both text and image.
+
+    2. Assign each entity to a level
+      
+    3. **From the entities identified in step 1,**, extract clearly defined relationships matching the types: {relation_types}
+      
+    4. Return the extracted entities and relationships in the required format.
+
+    ## Output Format
+    You must return a JSON object with the following structure:
+    ```json
+    {{
+      "entities": [
+        {{
+          "entity_name": "...",
+          "entity_type": "...",
+          "entity_description": "...",
+          "level": 1
+        }},
+        ...
+      ],
+      "relationships": [
+        {{
+          "source_entity": "entity_name",
+          "target_entity": "...",
+          "relation_type": "...",
+          "relationship_description": "...",
+          "relationship_keywords": ["...", "..."],
+        }},
+        ...
+      ]
+    }}
+    ```
+    ## Additional Constraints
+    - **Minimum depth requirement: You MUST extract entities at least up to Level 3. The extraction should include Level 1 (core concepts), Level 2 (supporting entities), and Level 3 (fine-grained attributes) entities.**
+    - Keep the number of levels minimal beyond Level 3. Prefer 2-3 levels unless deeper hierarchy is strongly justified.
+    - Check that the relationships are within the extracted entities.
+    - If you find the input text or image to be too short or lacking in detail, you can **skip extraction and return an empty JSON object**.
+
+    **CRITICAL: You MUST return ONLY valid JSON. Do NOT include:**
+    - Any thinking process, reasoning, or explanation
+    - Any comments, ellipsis (...), or extra text
+    - Any markdown code blocks (do not wrap JSON in ```json```)
+    - Any text before or after the JSON object
+    
+    **Start your response directly with {{ and end with }}. Return ONLY the JSON object.**
+    ## Text
+    {input_text}
+
+  chart_hierarchical_entity_extraction: |
+    ## Task Overview
+    You are given a chart (table, figure, or a combination of both), its caption, and optional surrounding context. Your task is to construct a **hierarchical knowledge graph** that represents the semantic structure of the chart.
+
+    Your main goal is to build a **layered knowledge graph** where:
+    - **Level 1 entities** represent the **chart's core topic** and **primary comparison dimensions** (derived from the caption and top-level headers).
+    - **Level 2 entities** represent **secondary dimensions or detailed subcategories** (rows, subheaders, nested categories).
+    - **Level 3 and beyond** represent **supporting data points**, such as fine-grained attributes.
+
+    The number of levels should be **adaptively determined** by the chart structure. If a level can be decomposed further (e.g., multi-level header), you must recursively create deeper levels.
+
+    ## Entity Extraction Guidelines
+    1. Extract **semantic-rich, disambiguated entities**:
+      - Level 1: Theme entities + key dimensions (caption subject + main header terms).
+      - Level 2: Row/column entities that specify subcategories.
+      - Level 3+: More finegrained attributes 
+      - Always include qualifiers for uniqueness (e.g., "Revenue (2023)" not just "Revenue").
+      - **All entities should be within the reuqired entity types {entity_types}**
+      - **IMPORTANT: You MUST extract entities at least up to Level 3. Do not stop at Level 1 or Level 2 only. Ensure that Level 3 entities (fine-grained attributes) are extracted when the chart structure supports it.**
+
+    2. Skip:
+      - Generic or referential phrases (e.g., "this table", "the data").
+      - Presentation-only text (e.g., "see below").
+
+    3. Provide concise, meaningful descriptions for each entity.
+
+    ## Relationship Guidelines
+    1. Extract **intra-level** relationships (especially among Level 1 entities).
+    2. Extract **inter-level** relationships to link higher-level entities to their children.
+    3. All relationships should be within required types {relation_types}.
+    3. Each relationship must include:
+      - `source_entity`, `target_entity`
+      - `relation_type` (must be in allowed types)
+      - `relationship_description`
+      - `relationship_keywords`
+
+    ## Output Format
+    Return a JSON object in the following format(keep the code block label ```json and ```):
+    ```json
+    {{
+      "entities": [
+        {{
+          "entity_name": "...",
+          "entity_type": "...",
+          "entity_description": "...",
+          "level": 1
+        }},
+        ...
+      ],
+      "relationships": [
+        {{
+          "source_entity": "entity_name",
+          "target_entity": "...",
+          "relation_type": "...",
+          "relationship_description": "...",
+          "relationship_keywords": ["...", "..."],
+        }},
+        ...
+      ]
+    }}
+    ```
+    
+    ## Additional Constraints
+    - Check that the relationships are within the extracted entities.
+    - Do not extract any numerical data points
+    - If you find the input text or image to be too short or lacking in detail, you can **skip extraction and return an empty JSON object**.
+    
+    **CRITICAL: You MUST return ONLY valid JSON. Do NOT include:**
+    - Any thinking process, reasoning, or explanation
+    - Any comments, ellipsis (...), or extra text
+    - Any markdown code blocks (do not wrap JSON in ```json```)
+    - Any text before or after the JSON object
+    
+    **Start your response directly with {{ and end with }}. Return ONLY the JSON object.**
+    ## Chart Image
+    {input_text}
+
+  
+
+  continual_extraction: |
+    Entities and relationships might be missed in the last extraction.
+    Add them below using the same format.
+    Added relations can be within existing entities or new entities.
+    If you find there's no more information to extract, you can **skip extraction and return an JSON object with empty extraction**:
+    ```json
+    {{
+      "entities": [],
+      "relationships": []
+    }}
+    ```
+
+
+
+  entity_resolution: |
+    ## Task Overview
+    You will be given several entitiy pairs and their corresponding descriptions. You are to determine whether the two entities are the same or different.
+
+    -Steps-
+    1. Identify the each entity pair with their names and descriptions
+    2. Judge whether the two entities of each pair are the same one by one
+    3. Return your decision with `yes` or `no` in required format
+    ## Output format
+    Then you will be gievn two entities and their descriptions, You should give a short and precise reasoning process, and return your judgements as a JSON object in the following format:
+    ```json
+    {{
+      "Pair 1" : "yes",
+      "Pair 2" : "no",
+      ......
+    }}
+    ```
+    ## Inpu pairs
+  
+

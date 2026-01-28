@@ -1,0 +1,379 @@
+prompts:
+  QA_OnePass: |
+    You are designing a high-quality multi-chart QA pair for chart retrieving and cross-chart reasoning.
+
+    Inputs:
+    - reasoning_paths: edges from a sampled knowledge-graph walk (each edge may include source chunk_id)
+      * Paths are organized as branches starting from a center entity
+      * Each branch shows level transitions (L0→L1→L2) indicating depth progression
+      * Branches ending at deeper levels (L2, L3) contain more specific information
+      * Endpoints are the final entities reached in each branch
+    - available_sources: chunk ids that provide evidence (some are charts, some are text)
+    - chart_index: mapping between image_index and chart chunk_id. Images are attached in exactly this order.
+    - text_evidence: text snippets corresponding to non-chart chunk ids in available_sources
+
+    IMPORTANT:
+    - You do NOT need to use all entities/relations in the reasoning_paths.
+      Select related entities that form a coherent and label-friendly reasoning chain and is answerable from evidence.
+    - AVOID questions that simply restate chart titles, directly quote chart content, or can be answered by simple lookup.
+    - When formulating questions, use MORE GENERAL language than chart titles. If you must reference information from a chart title, rephrase it in different words rather than directly quoting or paraphrasing the title.
+    - **CRITICAL: Do NOT reveal specific numbers/percentages in the question**: The question must NOT directly state specific numerical values (percentages, numbers, counts) from the charts unless those values are what you are asking the user to find. Instead, use descriptive phrases like "a certain percentage", "a specific level", "a particular rate", or refer to trends/relationships without stating the exact numbers. The user should need to look at the evidence to find these values.
+
+    Core requirements:
+    1) The output "query" is a retrieval-answer query. 
+      - The user will answer the question WITHOUT seeing sources or reasoning_paths.
+      - Therefore the question MUST be self-contained: include the necessary scope qualifiers (population/group, time period, metric definition/level, and comparison target).
+      - Do NOT use deictic references such as "both charts", "this chart", "the image above", "figure", "image_index".
+
+    2) Multi-source evidence requirement:
+      - The question MUST require combining evidence from at least TWO DIFFERENT sources if available.
+      - If there is only 1 chart source available, combine that chart with at least one text source.
+      - Synthesize information across multiple charts/text sources rather than asking about a single source.
+
+    3) Depth and analytical quality:
+      - Generate questions that capture deeper insights by:
+        * Extracting underlying patterns, relationships, or trends not immediately obvious from individual charts
+        * Connecting concepts across different domains, time periods, or population groups
+        * Requiring reasoning about implications, comparisons, or causal relationships
+        * Generalizing beyond specific chart labels to broader analytical questions
+      - AVOID questions that simply extract two numbers and compare their magnitudes (e.g., "Is percentage A higher than percentage B?"). Instead, formulate questions that explore logical relationships, implications, or analytical connections between concepts, even when they involve numerical data.
+
+    4) Branch depth preference and structure:
+      - **Understand branch structure**: Each branch starts from the center entity and progresses through levels. Deeper branches (ending at L2, L3) contain more specific, detailed information. Shallow branches (ending at L0, L1) contain more general concepts.
+      - **Prioritize deeper endpoints**: When selecting entities, prioritize using information from branches that reach deeper levels (L2, L3) as they provide more specific evidence.
+      - **Use branch progression**: Consider how branches progress from general (center) to specific (endpoints). This progression should be reflected in your question structure - start with broader context and narrow down to specific comparisons or analyses.
+      - **Connect branches meaningfully**: If multiple branches are used, ensure they connect logically. Branches sharing semantic similarity (indicated by similar endpoints or sources) should be used together to form coherent questions.
+
+    Examples of Good vs Bad Questions:
+
+    Example 1:
+    Entities selected: Democrats/leaning Democrats, Global Climate Change
+    
+    Good Question:
+    "Between 2022 and 2024, did the share of U.S. adults who identify as Democrats or leaning Democrats and believe that global climate change influences their decision-making increase or decrease?"
+    Why it's good: The question requires identifying the underlying change over time from multiple data points, rather than directly referencing chart titles or asking about a single metric.
+    
+    Bad Question:
+    "What is the percentage-point difference between the share of U.S. adults who identify as Democrats or leaning Democrats viewing global climate change as an extremely/very serious problem in 2022 and those who considered dealing with global climate change a top priority for the president and Congress in 2024?"
+    Why it's bad: The question directly references chart titles and specific survey questions, rather than synthesizing information from chart content to form a general analytical question. It uses wording that closely matches chart titles instead of rephrasing in more general terms.
+
+    Example 2:
+    Entities selected: U.S. Adults (18+), U.S. teens (13-17)
+    
+    Good Question:
+    "Which regulations will have more support from both U.S. adults aged 18+ and U.S. teens aged 13-17: Requiring parental consent for minors to create a social media account, Requiring people to verify their age before using social media sites, or Setting limits on how much time minors can spend on social media?"
+    Why it's good: The question synthesizes information from chart content to form a general comparative question, rather than directly referencing chart titles or specific survey questions.
+    
+    Bad Question:
+    "What is the percentage-point difference in support for requiring parental consent for minors to create social media accounts between U.S. adults aged 18+ and U.S. teens aged 13-17 during September-October 2023?"
+    Why it's bad: The question directly references the chart title and specific time period, rather than synthesizing information from chart content to form a broader analytical question. It should rephrase the policy description using more general language instead of quoting the chart title verbatim.
+
+    Example 3:
+    Entities selected: Black Adults, Year 2023
+    
+    Good Question:
+    "Among Black adults in the United States, does the belief that people not recognizing racial discrimination where it exists is the bigger problem imply that achieving the American dream is unattainable for them?"
+    Why it's good: The question explores a logical relationship and implication between two concepts rather than simply comparing two percentages. It requires analyzing whether one belief logically implies another, using the data (88% vs 33%) to evaluate the logical connection. The answer reveals that the majority holding one view does not imply the majority holds the other view, demonstrating analytical reasoning beyond simple numerical comparison.
+    
+    Bad Question:
+    "Among Black adults in the United States, is the proportion who believe people not recognizing racial discrimination where it exists is the bigger problem higher than the proportion who believe achieving the American dream is unattainable for them?"
+    Why it's bad: The question simply extracts two percentages (88% and 33%) and asks which is higher, requiring only a straightforward numerical comparison without exploring any logical relationship, implication, or analytical connection between the two concepts. It lacks depth and does not require reasoning about what the data means or how the concepts relate to each other.
+
+    Step-by-step task:
+    Step 1: Decide the BEST query_type from ["FactCheck","Manipulation","Trend","Analysis"].
+            - FactCheck: verify a claim using evidence.
+            - Manipulation: require extra calculation on data extracted from evidence, difference (percentage-point gap), change over time, ratio, aggregation (sum of categories), ranking, threshold/inequality check.
+            - Trend: describe change over time or pattern visible in charts.
+            - Analysis: multi-hop and multi-source analysis based on the evidence.
+    Step 2: Generate exactly ONE question and its explicit answer.
+            - The answer MUST be clear, direct, and unambiguous.
+            - Start with a definitive statement (e.g., "Yes", "No", "X%", "Y is higher than Z") rather than vague phrases.
+            - Provide specific numbers, percentages, or concrete comparisons when available in the evidence.
+            - Avoid ambiguous language like "it depends", "may be", "could be" unless the evidence genuinely supports uncertainty.
+            - If the answer involves a comparison, clearly state which is higher/lower/better/worse.
+            - If the answer involves a relationship, explicitly state whether it exists, is positive/negative, or does not exist.
+            - **CRITICAL: Question must NOT reveal data values**: Do NOT state specific percentages, numbers, or counts in the question itself (e.g., "France's favorable view was 53%" is WRONG). Instead, use phrases like "France's favorable view", "a certain percentage", "the level of support", etc. The question should require the user to extract these values from the evidence.
+    Step 3: Provide a short explanation that:
+            - references the relevant reasoning path edges (by describing linked entities/relations)
+            - cites the evidence chunk ids used
+            - if charts are used, cite their image_index + chunk_id (from chart_index)
+            - If perfect alignment is not possible, explicitly state the limitation and avoid drawing a strong conclusion.
+
+    Inputs for this instance:
+
+    reasoning_paths:
+    {reasoning_paths}
+
+    available_sources (chunk ids):
+    {available_sources}
+
+    chart_index (image_index -> chunk_id):
+    {chart_index}
+
+    text_evidence:
+    {text_evidence}
+
+    Output format (STRICT JSON only, no markdown, no extra text):
+    ```json
+    {{
+      "query_type": "...",
+      "question": "...",
+      "answer": "...",
+      "explanation": "...",
+      "entities_used": ["entity_id_1", "entity_id_2"],
+      "evidence": ["chunk_id_1", "chunk_id_2"],
+      "evidence_charts": [
+        {{"chunk_id": "chart_xxx", "image_index": 0}},
+        {{"chunk_id": "chart_yyy", "image_index": 1}}
+      ],
+      "difficulty_subjective": 1-3
+    }}
+    ```
+    
+    Note on difficulty_subjective:
+    - Rate the thinking depth required to answer this question: 1=simple (direct lookup), 2=moderate (requires some reasoning), 3=complex (requires deep analysis or multi-step reasoning).
+
+    Validation rules:
+    - "query_type" must be one of the four allowed values: ["FactCheck","Manipulation","Trend","Analysis"].
+    - "question" should not directly reference chart titles. 
+    - "question" must NOT contain specific numerical values (percentages, numbers, counts) from charts unless asking the user to find those values.
+    - "evidence" must be in available_sources.
+    - "evidence_charts" must only include charts listed in chart_index, and image_index must match chart_index.
+
+
+  QA_OnePass_long: |
+    You are designing a high-quality multi-chart QA pair for chart retrieving and cross-chart reasoning.
+
+    Inputs:
+    - reasoning_paths: edges from a sampled knowledge-graph walk (each edge may include source chunk_id)
+      * Paths are organized as branches starting from a center entity
+      * Each branch shows level transitions (L0→L1→L2) indicating depth progression
+      * Branches ending at deeper levels (L2, L3) contain more specific information
+      * Endpoints are the final entities reached in each branch
+    - available_sources: chunk ids that provide evidence (some are charts, some are text)
+    - chart_index: mapping between image_index and chart chunk_id. Images are attached in exactly this order.
+    - text_evidence: text snippets corresponding to non-chart chunk ids in available_sources
+
+    IMPORTANT:
+    - Select entities from reasoning_paths that form a coherent reasoning chain answerable from evidence (you don't need to use all).
+    - Use general language, not chart titles. Avoid simple lookups or direct quotes.
+    - **CRITICAL: Do NOT reveal specific numbers/percentages in the question**: The question must NOT directly state specific numerical values (percentages, numbers, counts) from the charts unless those values are what you are asking the user to find. Instead, use descriptive phrases like "a certain percentage", "a specific level", "a particular rate", or refer to trends/relationships without stating the exact numbers. The user should need to look at the evidence to find these values.
+    - **Entity-Answer Alignment**: Every entity mentioned in the question must be used in the answer with specific data. If not used, remove it from the question.
+
+    Core requirements:
+    1) The output "query" is a retrieval-answer query. 
+      - The user will answer the question WITHOUT seeing sources or reasoning_paths.
+      - Therefore the question MUST be self-contained: include the necessary scope qualifiers (population/group, time period, metric definition/level, and comparison target).
+      - Do NOT use deictic references such as "both charts", "this chart", "the image above", "figure", "image_index".
+
+    2) Multi-source evidence requirement:
+      - The question MUST require combining evidence from at least THREE DIFFERENT sources if available.
+      - If there is only 1-2 chart sources available, combine those charts with at least two text sources.
+      - Synthesize information across multiple charts/text sources rather than asking about a single source.
+
+    3) Depth and analytical quality:
+      - Extract patterns, connect concepts across domains/time/groups, require reasoning about implications/comparisons.
+      - AVOID simple number comparisons (e.g., "Is A higher than B?"). Explore logical relationships instead.
+      - **Multi-hop structure**: Build questions as narrative chains where each sentence connects to the previous one using "This...", "The...", "Within this...". AVOID "Considering X..." format - weave context into the narrative. See examples below.
+
+    4) Branch depth preference and structure:
+      - **Understand branch structure**: Each branch starts from the center entity and progresses through levels. Deeper branches (ending at L2, L3) contain more specific, detailed information. Shallow branches (ending at L0, L1) contain more general concepts.
+      - **Prioritize deeper endpoints**: When selecting entities, prioritize using information from branches that reach deeper levels (L2, L3) as they provide more specific evidence.
+      - **Use branch progression**: Consider how branches progress from general (center) to specific (endpoints). This progression should be reflected in your question structure - start with broader context and narrow down to specific comparisons or analyses.
+      - **Connect branches meaningfully**: If multiple branches are used, ensure they connect logically. Branches sharing semantic similarity (indicated by similar endpoints or sources) should be used together to form coherent questions.
+
+    Examples of Multi-Hop Reasoning Questions:
+
+    Good Example (Narrative Chain):
+    "Start in a village where a census roughly ten years after two thousand showed its population was almost entirely of one ethnic group. This village is part of a larger municipality. This municipality, named after an early religious figure, suffered greatly in a late 20th-century war, having been an area of rebel activity beforehand. The sequence of events of this war is documented. This documentation includes a specific mass killing that occurred in the year prior to the 21st century. This mass killing, resulting in about ninety-three civilian deaths (mostly older males), was cited in an indictment by an international tribunal against a national leader. The term for such an indictment is listed under the letter 'I' in a general catalog of legal topics. Within this same catalog of legal topics, what two-word term, found under the letter 'C', describes a statement where an individual admits to committing a crime?"
+
+    Good Example (Temporal/Institutional Context):
+    "I seek a 2016 publication found within the pages of a journal dedicated to process safety and environmental protection. This work delved into the intricacies of oil-gas separation within a vortex, numerically exploring how droplet interactions – both with each other and with bounding surfaces – alongside the potential for droplet fragmentation, influence overall efficiency. One contributor to this study previously examined the role of central channels in cyclone separators (around 2014) and the distinct impact of droplet breakup (around 2013), often publishing with colleagues (including a female associate professor and a male professor) from a well-known energy and power engineering school in Xi'an. Curiously, for this particular 2016 paper, this contributor's affiliation points towards an energy equipment company in Ningbo, rather than solely the academic institution. The research team, however, remained rooted in the Xi'an university group, with contributions from others who also investigated phenomena like oil film behaviour and splashing in similar systems. The study validated its computational models against real-world tests. What is the precise title of this investigation?"
+
+    Bad Example (Avoid):
+    "Considering the decline in favorable views of the United Nations in France from 2023 to 2024, what is the percentage-point difference in UN favorability between U.S. Democrats and Republicans in 2024?"
+    → Instead, weave context into narrative: "A country experienced a decline in UN favorability from 2023 to 2024. This country's trend reflects broader patterns in international institution support. Within the United States, political parties hold different views on the United Nations. What is the percentage-point difference in UN favorability between U.S. Democrats and Republicans in 2024?"
+
+    Step-by-step task:
+    Step 1: Decide the BEST query_type from ["FactCheck","Manipulation","Trend","Analysis"].
+            - FactCheck: verify a claim using evidence.
+            - Manipulation: require extra calculation on data extracted from evidence, difference (percentage-point gap), change over time, ratio, aggregation (sum of categories), ranking, threshold/inequality check.
+            - Trend: describe change over time or pattern visible in charts.
+            - Analysis: multi-hop and multi-source analysis based on the evidence.
+    Step 2: Generate exactly ONE question and its explicit answer.
+            - Answer must be clear, direct, start with definitive statement (e.g., "Yes", "No", "X%", "Y is higher than Z").
+            - Provide specific numbers/percentages when available. Avoid vague language unless evidence supports uncertainty.
+            - **CRITICAL: Question must NOT reveal data values**: Do NOT state specific percentages, numbers, or counts in the question itself (e.g., "France's favorable view was 53%" is WRONG). Instead, use phrases like "France's favorable view", "a certain percentage", "the level of support", etc. The question should require the user to extract these values from the evidence.
+            - **Entity-Answer Check**: Verify every entity mentioned in the question is used in the answer with specific data. If not, remove it from the question or include its data in the answer.
+    Step 3: Provide a short explanation that references reasoning path edges, cites evidence chunk ids, and cites chart image_index + chunk_id if charts are used.
+
+    Inputs for this instance:
+
+    reasoning_paths:
+    {reasoning_paths}
+
+    available_sources (chunk ids):
+    {available_sources}
+
+    chart_index (image_index -> chunk_id):
+    {chart_index}
+
+    text_evidence:
+    {text_evidence}
+
+    Output format (STRICT JSON only, no markdown, no extra text):
+    ```json
+    {{
+      "query_type": "...",
+      "question": "...",
+      "answer": "...",
+      "explanation": "...",
+      "entities_used": ["entity_id_1", "entity_id_2"],
+      "evidence": ["chunk_id_1", "chunk_id_2"],
+      "evidence_charts": [
+        {{"chunk_id": "chart_xxx", "image_index": 0}},
+        {{"chunk_id": "chart_yyy", "image_index": 1}}
+      ],
+      "difficulty_subjective": 1-3
+    }}
+    ```
+    
+    Note on difficulty_subjective:
+    - Rate the thinking depth required to answer this question: 1=simple (direct lookup), 2=moderate (requires some reasoning), 3=complex (requires deep analysis or multi-step reasoning).
+
+    Validation rules:
+    - "query_type" must be one of: ["FactCheck","Manipulation","Trend","Analysis"].
+    - "question" should not reference chart titles directly.
+    - "question" must NOT contain specific numerical values (percentages, numbers, counts) from charts unless asking the user to find those values.
+    - "evidence" must be in available_sources.
+    - "evidence_charts" must match chart_index, image_index must match.
+    - Every entity mentioned in question must be used in answer with specific data.
+
+  QA_OnePass_easy: |
+    You are designing a high-quality multi-chart QA pair for chart retrieving and cross-chart reasoning.
+
+    Inputs:
+    - reasoning_paths: edges from a sampled knowledge-graph walk (each edge may include source chunk_id)
+      * Paths are organized as branches starting from a center entity
+      * Each branch shows level transitions (L0→L1→L2) indicating depth progression
+      * Branches ending at deeper levels (L2, L3) contain more specific information
+      * Endpoints are the final entities reached in each branch
+    - available_sources: chunk ids that provide evidence (some are charts, some are text)
+    - chart_index: mapping between image_index and chart chunk_id. Images are attached in exactly this order.
+    - text_evidence: text snippets corresponding to non-chart chunk ids in available_sources
+
+    IMPORTANT:
+    - You do NOT need to use all entities/relations in the reasoning_paths.
+      Select related entities that form a coherent and label-friendly reasoning chain and is answerable from evidence.
+    - AVOID questions that simply restate chart titles, directly quote chart content, or can be answered by simple lookup.
+    - When formulating questions, use MORE GENERAL language than chart titles. If you must reference information from a chart title, rephrase it in different words rather than directly quoting or paraphrasing the title.
+    - Do NOT reveal specific numbers/percentages in the question**: The question must NOT directly state specific numerical values (percentages, numbers, counts) from the charts unless those values are what you are asking the user to find. Instead, use descriptive phrases like "a certain percentage", "a specific level", "a particular rate", or refer to trends/relationships without stating the exact numbers. The user should need to look at the evidence to find these values.
+
+    Core requirements:
+    1) The output "query" is a retrieval-answer query. 
+      - The user will answer the question WITHOUT seeing sources or reasoning_paths.
+      - Therefore the question MUST be self-contained: include the necessary scope qualifiers (population/group, time period, metric definition/level, and comparison target).
+      - Do NOT use deictic references such as "both charts", "this chart", "the image above", "figure", "image_index".
+
+    2) Multi-source evidence requirement:
+      - The question MUST require combining evidence from at least TWO DIFFERENT sources if available.
+      - If there is only 1 chart source available, combine that chart with at least one text source.
+      - Synthesize information across multiple charts/text sources rather than asking about a single source.
+
+    3) Depth and analytical quality:
+      - Generate questions that capture deeper insights by:
+        * Extracting underlying patterns, relationships, or trends not immediately obvious from individual charts
+        * Connecting concepts across different domains, time periods, or population groups
+        * Requiring reasoning about implications, comparisons, or causal relationships
+        * Generalizing beyond specific chart labels to broader analytical questions
+
+    4) Branch depth preference and structure:
+      - **Understand branch structure**: Each branch starts from the center entity and progresses through levels. Deeper branches (ending at L2, L3) contain more specific, detailed information. Shallow branches (ending at L0, L1) contain more general concepts.
+      - **Prioritize deeper endpoints**: When selecting entities, prioritize using information from branches that reach deeper levels (L2, L3) as they provide more specific evidence.
+      - **Use branch progression**: Consider how branches progress from general (center) to specific (endpoints). This progression should be reflected in your question structure - start with broader context and narrow down to specific comparisons or analyses.
+      - **Connect branches meaningfully**: If multiple branches are used, ensure they connect logically. Branches sharing semantic similarity (indicated by similar endpoints or sources) should be used together to form coherent questions.
+
+    Examples of Good vs Bad Questions:
+
+    Example 1:
+    Entities selected: Democrats/leaning Democrats, Global Climate Change
+    
+    Good Question:
+    "Between 2022 and 2024, did the share of U.S. adults who identify as Democrats or leaning Democrats and believe that global climate change influences their decision-making increase or decrease?"
+    Why it's good: The question requires identifying the underlying change over time from multiple data points, rather than directly referencing chart titles or asking about a single metric.
+    
+    Bad Question:
+    "What is the percentage-point difference between the share of U.S. adults who identify as Democrats or leaning Democrats viewing global climate change as an extremely/very serious problem in 2022 and those who considered dealing with global climate change a top priority for the president and Congress in 2024?"
+    Why it's bad: The question directly references chart titles and specific survey questions, rather than synthesizing information from chart content to form a general analytical question. It uses wording that closely matches chart titles instead of rephrasing in more general terms.
+
+    Example 2:
+    Entities selected: U.S. Adults (18+), U.S. teens (13-17)
+    
+    Good Question:
+    "Which regulations will have more support from both U.S. adults aged 18+ and U.S. teens aged 13-17: Requiring parental consent for minors to create a social media account, Requiring people to verify their age before using social media sites, or Setting limits on how much time minors can spend on social media?"
+    Why it's good: The question synthesizes information from chart content to form a general comparative question, rather than directly referencing chart titles or specific survey questions.
+    
+    Bad Question:
+    "What is the percentage-point difference in support for requiring parental consent for minors to create social media accounts between U.S. adults aged 18+ and U.S. teens aged 13-17 during September-October 2023?"
+    Why it's bad: The question directly references the chart title and specific time period, rather than synthesizing information from chart content to form a broader analytical question. It should rephrase the policy description using more general language instead of quoting the chart title verbatim.
+
+
+    Step-by-step task:
+    Step 1: Decide the BEST query_type from ["FactCheck","Manipulation","Trend"].
+            - FactCheck: verify a claim using evidence.
+            - Manipulation: require extra calculation on data extracted from evidence, difference (percentage-point gap), change over time, ratio, aggregation (sum of categories), ranking, threshold/inequality check.
+            - Trend: describe change over time or pattern visible in charts.
+    Step 2: Generate exactly ONE question and its explicit answer.
+            - The answer MUST be clear, direct, and unambiguous.
+            - Start with a definitive statement (e.g., "Yes", "No", "X%", "Y is higher than Z") rather than vague phrases.
+            - Provide specific numbers, percentages, or concrete comparisons when available in the evidence.
+            - Avoid ambiguous language like "it depends", "may be", "could be" unless the evidence genuinely supports uncertainty.
+            - If the answer involves a comparison, clearly state which is higher/lower/better/worse.
+            - If the answer involves a relationship, explicitly state whether it exists, is positive/negative, or does not exist.
+            - **CRITICAL: Question must NOT reveal data values**: Do NOT state specific percentages, numbers, or counts in the question itself (e.g., "France's favorable view was 53%" is WRONG). Instead, use phrases like "France's favorable view", "a certain percentage", "the level of support", etc. The question should require the user to extract these values from the evidence.
+    Step 3: Provide a short explanation that:
+            - references the relevant reasoning path edges (by describing linked entities/relations)
+            - cites the evidence chunk ids used
+            - if charts are used, cite their image_index + chunk_id (from chart_index)
+            - If perfect alignment is not possible, explicitly state the limitation and avoid drawing a strong conclusion.
+
+    Inputs for this instance:
+
+    reasoning_paths:
+    {reasoning_paths}
+
+    available_sources (chunk ids):
+    {available_sources}
+
+    chart_index (image_index -> chunk_id):
+    {chart_index}
+
+    text_evidence:
+    {text_evidence}
+
+    Output format (STRICT JSON only, no markdown, no extra text):
+    ```json
+    {{
+      "query_type": "...",
+      "question": "...",
+      "answer": "...",
+      "explanation": "...",
+      "entities_used": ["entity_id_1", "entity_id_2"],
+      "evidence": ["chunk_id_1", "chunk_id_2"],
+      "evidence_charts": [
+        {{"chunk_id": "chart_xxx", "image_index": 0}},
+        {{"chunk_id": "chart_yyy", "image_index": 1}}
+      ],
+      "difficulty_subjective": 1-3
+    }}
+    ```
+    
+    Note on difficulty_subjective:
+    - Rate the thinking depth required to answer this question: 1=simple (direct lookup), 2=moderate (requires some reasoning), 3=complex (requires deep analysis or multi-step reasoning).
+
+    Validation rules:
+    - "query_type" must be one of the four allowed values: ["FactCheck","Manipulation","Trend"].
+    - "question" should not directly reference chart titles. 
+    - "question" must NOT contain specific numerical values (percentages, numbers, counts) from charts unless asking the user to find those values.
+    - "evidence" must be in available_sources.
+    - "evidence_charts" must only include charts listed in chart_index, and image_index must match chart_index.

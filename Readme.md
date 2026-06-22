@@ -1,3 +1,7 @@
+### Dataset
+We place all processed datasets used in this project under the `Dataset/` folder.
+The original chart images are derived from **Chart-MRAG[1]** and **ChartQA-Pro[2]**
+
 To run this project, you should follow the VAGEN README to install the required packages,
 ```
 # Create a new conda environment
@@ -30,3 +34,6 @@ run other scripts,
 ```
 PYTHONPATH=. python XXX.py 
 ```
+### Reference
+[1] Bench-marking multimodal rag through a chart-based document question-answering generation framework. arXiv preprint arXiv:2502.14864, 2025
+[2] Chartqapro: A more diverse and challenging benchmark for chart question answering. arXiv preprint arXiv:2504.05506, 2025

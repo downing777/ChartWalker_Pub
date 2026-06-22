@@ -36,4 +36,5 @@ PYTHONPATH=. python XXX.py
 ```
 ### Reference
 [1] Bench-marking multimodal rag through a chart-based document question-answering generation framework. arXiv preprint arXiv:2502.14864, 2025
+
 [2] Chartqapro: A more diverse and challenging benchmark for chart question answering. arXiv preprint arXiv:2504.05506, 2025
